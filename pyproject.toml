@@ -19,6 +19,7 @@ build-backend = "uv_build"
 
 [dependency-groups]
 dev = [
+    "import-linter>=2.15",
     "mypy>=2.3.1",
     "pre-commit>=4.6.2",
     "ruff>=0.16.10",
@@ -48,3 +49,30 @@ select = [
 [tool.mypy]
 strict = true
 files = ["src"]
+
+[tool.importlinter]
+root_package = "control_plane"
+
+[[tool.importlinter.contracts]]
+name = "Le domaine ne dépend d'aucune autre couche"
+type = "forbidden"
+source_modules = ["control_plane.domain"]
+forbidden_modules = [
+    "control_plane.api",
+    "control_plane.services",
+    "control_plane.evaluation",
+    "control_plane.infrastructure",
+    "control_plane.observability",
+]
+
+[[tool.importlinter.contracts]]
+name = "La logique métier ignore l'API et l'infrastructure"
+type = "forbidden"
+source_modules = ["control_plane.evaluation", "control_plane.services"]
+forbidden_modules = ["control_plane.api", "control_plane.infrastructure"]
+
+[[tool.importlinter.contracts]]
+name = "L'infrastructure ne remonte pas vers l'API ni les services"
+type = "forbidden"
+source_modules = ["control_plane.infrastructure"]
+forbidden_modules = ["control_plane.api", "control_plane.services"]
