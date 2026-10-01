@@ -8,7 +8,10 @@ authors = [
     { name = "Damien", email = "damien.nerri@gmail.com" }
 ]
 requires-python = ">=3.14"
-dependencies = []
+dependencies = [
+    "pydantic>=2.13.5",
+    "pydantic-settings>=2.15.0",
+]
 
 [project.scripts]
 control-plane = "control_plane:main"
@@ -49,6 +52,7 @@ select = [
 [tool.mypy]
 strict = true
 files = ["src"]
+plugins = ["pydantic.mypy"]
 
 [tool.importlinter]
 root_package = "control_plane"
