@@ -15,16 +15,17 @@ class Settings(BaseSettings):
 
     env: Literal["dev", "test", "prod"] = "dev"
     database_url: SecretStr
+    database_migration_url: SecretStr | None = None
     evaluation_engine: Literal["chain", "sql"] = "chain"
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
     db_pool_size: int = Field(default=5, ge=1, le=20)
     db_max_overflow: int = Field(default=5, ge=0, le=20)
 
-    @field_validator("database_url")
+    @field_validator("database_url", "database_migration_url")
     @classmethod
-    def _check_driver(cls, value: SecretStr) -> SecretStr:
-        if not value.get_secret_value().startswith("postgresql+asyncpg://"):
-            raise ValueError("DATABASE_URL doit utiliser le pilote postgresql+asyncpg://")
+    def _check_driver(cls, value: SecretStr | None) -> SecretStr | None:
+        if value is not None and not value.get_secret_value().startswith("postgresql+asyncpg://"):
+            raise ValueError("Les URL de base doivent utiliser le pilote postgresql+asyncpg://")
         return value
 
     @property
