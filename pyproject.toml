@@ -9,8 +9,10 @@ authors = [
 ]
 requires-python = ">=3.14"
 dependencies = [
+    "asyncpg>=0.31.0",
     "pydantic>=2.13.5",
     "pydantic-settings>=2.15.0",
+    "sqlalchemy[asyncio]>=2.1.1",
 ]
 
 [project.scripts]
@@ -56,6 +58,7 @@ plugins = ["pydantic.mypy"]
 
 [tool.importlinter]
 root_package = "control_plane"
+include_external_packages = true
 
 [[tool.importlinter.contracts]]
 name = "Le domaine ne dépend d'aucune autre couche"
@@ -67,6 +70,7 @@ forbidden_modules = [
     "control_plane.evaluation",
     "control_plane.infrastructure",
     "control_plane.observability",
+    "sqlalchemy",
 ]
 
 [[tool.importlinter.contracts]]
