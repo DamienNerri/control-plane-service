@@ -16,3 +16,35 @@ control-plane = "control_plane:main"
 [build-system]
 requires = ["uv_build>=0.12.21,<0.13.0"]
 build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "mypy>=2.3.1",
+    "pre-commit>=4.6.2",
+    "ruff>=0.16.10",
+]
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E", "W",   # style PEP 8
+    "F",        # erreurs (imports inutilisés, variables non définies)
+    "I",        # tri des imports
+    "B",        # bugs fréquents
+    "UP",       # syntaxe Python moderne
+    "N",        # conventions de nommage
+    "S",        # sécurité (règles bandit)
+    "SIM",      # simplifications
+    "ASYNC",    # pièges de l'asynchrone
+    "RUF",      # règles propres à ruff
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101"]   # assert autorisé dans les tests
+
+[tool.mypy]
+strict = true
+files = ["src"]
