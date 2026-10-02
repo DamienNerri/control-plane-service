@@ -1,12 +1,13 @@
 """Données de test fictives pour le développement local, jamais en production.
 
-Reprend les scénarios d'acceptation du cahier des charges.
+Couvre les 10 scénarios d'acceptation du cahier des charges v1.1.
 Idempotent : peut être relancé sans créer de doublons.
 """
 
 import asyncio
 import sys
 import uuid
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -21,25 +22,58 @@ from control_plane.infrastructure.db.models import (
     GroupPermission,
     Permission,
     Project,
+    ProjectAdmin,
     ProjectMembership,
     User,
     UserProjectOverride,
 )
 from control_plane.infrastructure.db.session import get_engine, get_session_factory
 
-PROJECT_ID = "portfolio_dev"
-
-PERMISSIONS = {
-    "project:delete": "Supprimer un projet",
-    "contact:send": "Envoyer le formulaire de contact",
-    "invoice:create": "Créer une facture",
-    "invoice:read": "Consulter les factures",
+# Créées avec chaque projet (RG-13). AdminService les créera lui-même au ticket CP-22.
+ADMIN_PERMISSIONS = {
+    "admin:permission_manage": "Déclarer ou supprimer une permission du projet",
+    "admin:group_manage": "Créer, modifier ou supprimer un groupe",
+    "admin:member_assign": "Ajouter ou retirer un membre, changer son groupe",
+    "admin:override_manage": "Poser ou retirer un override",
+    "admin:audit_read": "Consulter le journal d'audit du projet",
 }
 
-# groupe -> (nom affiché, permissions du groupe)
-GROUPS = {
-    "group_visitor": ("Visiteur", ["contact:send"]),
-    "group_dev": ("Développeur", ["contact:send", "invoice:create", "invoice:read"]),
+
+@dataclass(frozen=True)
+class ProjectSeed:
+    name: str
+    # permission métier -> description
+    permissions: dict[str, str]
+    # groupe -> (nom affiché, permissions du groupe)
+    groups: dict[str, tuple[str, list[str]]] = field(default_factory=dict)
+
+
+PROJECTS = {
+    "portfolio_dev": ProjectSeed(
+        name="Portfolio (dev)",
+        permissions={
+            "project:delete": "Supprimer un projet",
+            "contact:send": "Envoyer le formulaire de contact",
+            "invoice:create": "Créer une facture",
+            "invoice:read": "Consulter les factures",
+        },
+        groups={
+            "group_visitor": ("Visiteur", ["contact:send"]),
+            "group_dev": ("Développeur", ["contact:send", "invoice:create", "invoice:read"]),
+            # Manager : peut ajouter des membres, mais n'a que contact:send (scénarios 8 à 10)
+            "group_manager": ("Manager", ["admin:member_assign", "contact:send"]),
+        },
+    ),
+    "blog_dev": ProjectSeed(
+        name="Blog (dev)",
+        permissions={
+            "contact:send": "Envoyer le formulaire de contact",
+            "post:publish": "Publier un article",
+        },
+        groups={
+            "group_visitor": ("Visiteur", ["contact:send"]),
+        },
+    ),
 }
 
 # sub fictif -> Global Owner ?
@@ -47,20 +81,27 @@ USERS = {
     "usr_owner": True,
     "usr_alice": False,
     "usr_bob": False,
+    "usr_dana": False,
+    "usr_eric": False,
 }
 
-# sub -> groupe dans portfolio_dev
-MEMBERSHIPS = {
-    "usr_alice": "group_visitor",
-    "usr_bob": "group_dev",
-}
+# (sub, projet) : admins de projet, nommés par usr_owner
+PROJECT_ADMINS = [("usr_dana", "portfolio_dev")]
+
+# (sub, projet, groupe)
+MEMBERSHIPS = [
+    ("usr_alice", "portfolio_dev", "group_visitor"),
+    ("usr_bob", "portfolio_dev", "group_dev"),
+    ("usr_eric", "portfolio_dev", "group_manager"),
+]
 
 
 async def _insert_ignore(
     session: AsyncSession, model: type[Base], rows: list[dict[str, Any]]
 ) -> None:
     """INSERT ... ON CONFLICT DO NOTHING : les lignes déjà présentes sont gardées."""
-    await session.execute(insert(model).values(rows).on_conflict_do_nothing())
+    if rows:
+        await session.execute(insert(model).values(rows).on_conflict_do_nothing())
 
 
 async def _user_ids(session: AsyncSession) -> dict[str, uuid.UUID]:
@@ -71,24 +112,37 @@ async def _user_ids(session: AsyncSession) -> dict[str, uuid.UUID]:
 async def seed(session: AsyncSession) -> None:
     await _insert_ignore(
         session,
+        Project,
+        [{"id": project_id, "name": p.name} for project_id, p in PROJECTS.items()],
+    )
+    await _insert_ignore(
+        session,
         Permission,
-        [{"id": perm, "description": desc} for perm, desc in PERMISSIONS.items()],
+        [
+            {"project_id": project_id, "id": perm, "description": desc}
+            for project_id, p in PROJECTS.items()
+            for perm, desc in {**ADMIN_PERMISSIONS, **p.permissions}.items()
+        ],
     )
     await _insert_ignore(
         session,
         Group,
-        [{"id": group, "name": name} for group, (name, _) in GROUPS.items()],
+        [
+            {"project_id": project_id, "id": group, "name": name}
+            for project_id, p in PROJECTS.items()
+            for group, (name, _) in p.groups.items()
+        ],
     )
     await _insert_ignore(
         session,
         GroupPermission,
         [
-            {"group_id": group, "permission_id": perm}
-            for group, (_, perms) in GROUPS.items()
+            {"project_id": project_id, "group_id": group, "permission_id": perm}
+            for project_id, p in PROJECTS.items()
+            for group, (_, perms) in p.groups.items()
             for perm in perms
         ],
     )
-    await _insert_ignore(session, Project, [{"id": PROJECT_ID, "name": "Portfolio (dev)"}])
     await _insert_ignore(
         session,
         User,
@@ -99,10 +153,18 @@ async def seed(session: AsyncSession) -> None:
 
     await _insert_ignore(
         session,
+        ProjectAdmin,
+        [
+            {"user_id": ids[subject], "project_id": project_id, "created_by": ids["usr_owner"]}
+            for subject, project_id in PROJECT_ADMINS
+        ],
+    )
+    await _insert_ignore(
+        session,
         ProjectMembership,
         [
-            {"user_id": ids[subject], "project_id": PROJECT_ID, "group_id": group}
-            for subject, group in MEMBERSHIPS.items()
+            {"user_id": ids[subject], "project_id": project_id, "group_id": group}
+            for subject, project_id, group in MEMBERSHIPS
         ],
     )
     await _insert_ignore(
@@ -110,9 +172,9 @@ async def seed(session: AsyncSession) -> None:
         UserProjectOverride,
         [
             {
-                # Scénario d'acceptation : le DENY individuel bat le groupe
+                # Scénario 3 : le DENY individuel bat le groupe
                 "user_id": ids["usr_bob"],
-                "project_id": PROJECT_ID,
+                "project_id": "portfolio_dev",
                 "permission_id": "invoice:create",
                 "effect": "DENY",
                 "reason": "Scénario d'acceptation : refus individuel",
@@ -122,7 +184,7 @@ async def seed(session: AsyncSession) -> None:
             {
                 # RG-04 : un override expiré est ignoré
                 "user_id": ids["usr_alice"],
-                "project_id": PROJECT_ID,
+                "project_id": "portfolio_dev",
                 "permission_id": "invoice:read",
                 "effect": "ALLOW",
                 "reason": "Accès temporaire terminé (test d'expiration)",
@@ -148,7 +210,10 @@ async def main() -> int:
     finally:
         await get_engine().dispose()
 
-    print(f"Données de test présentes dans {PROJECT_ID} (3 utilisateurs, 2 overrides).")
+    print(
+        f"Données de test présentes : {len(PROJECTS)} projets, {len(USERS)} utilisateurs, "
+        f"{len(PROJECT_ADMINS)} admin de projet, {len(MEMBERSHIPS)} appartenances."
+    )
     return 0
 
 
