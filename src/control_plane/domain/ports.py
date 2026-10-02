@@ -1,12 +1,14 @@
-"""Ports du domaine : ce dont l'évaluation a besoin pour lire les droits.
+"""Ports du domaine : ce dont l'évaluation a besoin, et ce qu'elle offre.
 
-Le domaine décrit le besoin ; l'infrastructure fournit l'implémentation
+Le domaine décrit les besoins ; l'infrastructure fournit les implémentations
 (SQLAlchemy en production, mémoire dans les tests).
 """
 
 from datetime import datetime
 from enum import StrEnum
 from typing import Protocol
+
+from control_plane.domain.evaluation import Decision, EvaluationContext
 
 
 class OverrideEffect(StrEnum):
@@ -53,4 +55,16 @@ class RightsReader(Protocol):
         Ne tient pas compte des statuts Global Owner et admin de projet :
         l'appelant les traite à part.
         """
+        ...
+
+
+class PermissionEvaluator(Protocol):
+    """Moteur d'évaluation (pattern Strategy) : chaîne de maillons ou requête SQL unique.
+
+    Une instance est liée à une requête HTTP, donc à sa session de base de données.
+    Les deux moteurs doivent renvoyer la même raison pour la même question.
+    """
+
+    async def evaluate(self, context: EvaluationContext, at: datetime | None = None) -> Decision:
+        """Répond à la question ; `at` vaut l'instant présent s'il n'est pas fourni."""
         ...

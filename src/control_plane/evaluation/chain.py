@@ -1,7 +1,9 @@
 """Assemblage de la chaîne d'évaluation et refus par défaut."""
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 from control_plane.domain.evaluation import Decision, EvaluationContext, Reason
 from control_plane.domain.ports import RightsReader
@@ -12,6 +14,9 @@ from control_plane.evaluation.handlers import (
     OverrideHandler,
     ProjectAdminHandler,
 )
+
+if TYPE_CHECKING:
+    from control_plane.domain.ports import PermissionEvaluator
 
 
 class EvaluationChain:
@@ -55,3 +60,20 @@ def build_chain() -> EvaluationChain:
             GroupHandler(),
         ]
     )
+
+
+@dataclass(frozen=True, slots=True)
+class ChainEvaluator:
+    """Moteur « chain » : la chaîne partagée, liée au dépôt de la requête en cours."""
+
+    chain: EvaluationChain
+    reader: RightsReader
+
+    async def evaluate(self, context: EvaluationContext, at: datetime | None = None) -> Decision:
+        return await self.chain.evaluate(context, self.reader, at)
+
+
+if TYPE_CHECKING:
+    # Vérifié par mypy uniquement : ChainEvaluator respecte le port PermissionEvaluator
+    def _conformance_check(chain: EvaluationChain, reader: RightsReader) -> PermissionEvaluator:
+        return ChainEvaluator(chain, reader)
